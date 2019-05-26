@@ -1,0 +1,389 @@
+#
+# OpenSIPS loadbalancer script
+#     by OpenSIPS Solutions <team@opensips-solutions.com>
+#
+# This script was generated via "make menuconfig", from
+#   the "Load Balancer" scenario.
+# You can enable / disable more features / functionalities by
+#   re-generating the scenario with different options.
+#
+# Please refer to the Core CookBook at:
+#      http://www.opensips.org/Resources/DocsCookbooks
+# for a explanation of possible statements, functions and parameters.
+#
+
+
+####### Global Parameters #########
+
+log_level=3
+log_stderror=no
+log_facility=LOG_LOCAL0
+
+children=8
+server_signature = yes
+server_header = "Server: YulSIP-PBX"
+user_agent_header = "User-Agent: YulSIP-PBX"
+tcp_max_connections = 4096
+tcp_connection_lifetime = 3605
+tcp_accept_aliases = no
+tcp_connect_timeout = 10
+tcp_keepalive = yes
+tcp_keepidle = 30
+
+dns = yes
+rev_dns = yes
+dns_try_ipv6 = no
+dns_try_naptr = yes
+
+/* uncomment the next line to disable TCP (default on) */
+#disable_tcp=yes
+
+/* uncomment the next line to disable the auto discovery of local aliases
+   based on reverse DNS on IPs (default on) */
+auto_aliases = yes
+
+/* uncomment the following lines to enable debugging */
+#debug_mode=yes
+
+/* uncomment the next line to enable the auto temporary blacklisting of 
+   not available destinations (default disabled) */
+#disable_dns_blacklist=no
+
+/* uncomment the next line to enable IPv6 lookup after IPv4 dns 
+   lookup failures (default disabled) */
+#dns_try_ipv6=yes
+
+/* comment the next line to enable the auto discovery of local aliases
+   based on reverse DNS on IPs */
+auto_aliases=no
+
+
+listen=udp:eth0:5060   # CUSTOMIZE ME
+listen=tcp:eth0:5060   # CUSTOMIZE ME
+#listen=tls:eth0:5061   # CUSTOMIZE ME
+
+#advertised_address="sbc.yulsip.com"
+advertised_address="144.76.42.189"
+
+####### Modules Section ########
+
+#set module path
+mpath="/usr/lib/x86_64-linux-gnu/opensips/modules/"
+
+#### HTTPD module
+loadmodule "httpd.so"
+modparam("httpd", "port", 8080)
+
+loadmodule "mi_json.so"
+
+#### SIGNALING module
+loadmodule "signaling.so"
+
+#### StateLess module
+loadmodule "sl.so"
+
+#### Transaction Module
+loadmodule "tm.so"
+modparam("tm", "fr_timeout", 5)
+modparam("tm", "fr_inv_timeout", 30)
+modparam("tm", "restart_fr_on_each_reply", 0)
+modparam("tm", "onreply_avp_mode", 1)
+
+#### Record Route Module
+loadmodule "rr.so"
+/* do not append from tag to the RR (no need for this script) */
+modparam("rr", "append_fromtag", 0)
+
+#### MAX ForWarD module
+loadmodule "maxfwd.so"
+modparam("maxfwd", "max_limit", 50)
+
+#### SIP MSG OPerationS module
+loadmodule "sipmsgops.so"
+
+#### FIFO Management Interface
+loadmodule "mi_fifo.so"
+modparam("mi_fifo", "fifo_name", "/tmp/opensips_fifo")
+modparam("mi_fifo", "fifo_mode", 0666)
+
+#### URI module
+loadmodule "uri.so"
+modparam("uri", "use_uri_table", 0)
+
+#### POSTGRESQL module
+loadmodule "db_postgres.so"
+modparam("db_postgres", "max_db_queries", 7000)
+modparam("db_postgres", "exec_query_threshold", 60000)
+
+#### MYSQL module
+loadmodule "db_mysql.so"
+
+#### AVPOPS module
+loadmodule "avpops.so"
+modparam("avpops", "db_url", "postgres://opensips:H3ll0kamailio2018!!@localhost/opensips")
+
+#### ACCounting module
+loadmodule "acc.so"
+/* what special events should be accounted ? */
+modparam("acc", "early_media", 0)
+modparam("acc", "report_cancels", 0)
+/* by default we do not adjust the direct of the sequential requests.
+   if you enable this parameter, be sure the enable "append_fromtag"
+   in "rr" module */
+modparam("acc", "detect_direction", 0)
+modparam("acc", "db_url", "postgres://opensips:H3ll0kamailio2018!!@localhost/opensips") # CUSTOMIZE ME
+
+
+
+
+#### DISPATCHER module
+loadmodule "dispatcher.so"
+modparam("dispatcher", "db_url", "postgres://opensips:H3ll0kamailio2018!!@localhost/opensips") # CUSTOMIZE ME
+modparam("dispatcher", "ds_ping_method", "OPTIONS")
+modparam("dispatcher", "ds_probing_mode", 0)
+
+modparam("dispatcher", "ds_ping_interval", 30)
+
+loadmodule "path.so"
+
+####  MI_HTTP module
+loadmodule "mi_http.so"
+
+
+loadmodule "proto_udp.so"
+
+loadmodule "proto_tcp.so" 
+#loadmodule "proto_tls.so"
+#loadmodule "tls_mgm.so"
+#modparam("tls_mgm","verify_cert", "1")
+#modparam("tls_mgm","require_cert", "0")
+#modparam("tls_mgm","tls_method", "TLSv1")
+#modparam("tls_mgm","certificate", "/usr/local/etc/opensips/tls/user/user-cert.pem")
+#modparam("tls_mgm","private_key", "/usr/local/etc/opensips/tls/user/user-privkey.pem")
+#modparam("tls_mgm","ca_list", "/usr/local/etc/opensips/tls/user/user-calist.pem")
+
+ 
+
+####### Routing Logic ########
+
+
+# main request routing logic
+
+route{
+
+route(ANTIFLOOD);
+
+	if (!mf_process_maxfwd_header("10")) {
+		send_reply("483","Too Many Hops");
+		exit;
+	}
+
+	if (has_totag()) {
+
+		# handle hop-by-hop ACK (no routing required)
+		if ( is_method("ACK") && t_check_trans() ) {
+			t_relay();
+			exit;
+		}
+
+		# sequential request withing a dialog should
+		# take the path determined by record-routing
+		if ( !loose_route() ) {
+			# we do record-routing for all our traffic, so we should not
+			# receive any sequential requests without Route hdr.
+			send_reply("404","Not here");
+			exit;
+		}
+		
+		if (is_method("BYE")) {
+			# do accounting even if the transaction fails
+			do_accounting("db","failed");
+			
+		}
+
+		# route it out to whatever destination was set by loose_route()
+		# in $du (destination URI).
+		route(RELAY);
+		exit;
+	}
+
+	#### INITIAL REQUESTS
+
+	# CANCEL processing
+	if (is_method("CANCEL")) {
+		if (t_check_trans())
+			t_relay();
+		exit;
+	} 
+
+	t_check_trans();
+
+	# preloaded route checking
+	if (loose_route()) {
+		xlog("L_ERR",
+			"Attempt to route with preloaded Route's [$fu/$tu/$ru/$ci]");
+		if (!is_method("ACK"))
+			send_reply("403","Preload Route denied");
+		exit;
+	}
+
+	# record routing
+	record_route();
+
+	do_accounting("db");
+	
+
+	
+	if ( !ds_select_dst("1","4") ) {
+	
+		send_reply("500","No Destination available");
+		exit;
+	}
+
+	t_on_failure("GW_FAILOVER");
+
+	route(RELAY);
+}
+
+
+route[RELAY] {
+	if (!t_relay()) {
+		sl_reply_error();
+	}
+	exit;
+}
+
+route[ANTIFLOOD] {
+
+############ 23.03.2019 Security Update ############
+	avp_db_query("select count from banlist where ipaddr='$si' and domain='$td' and subscriber='$tU'", "$avp(count)");
+	xlog("L_INFO", "COUNT IS $avp(count) ");
+	if(($avp(count) == 8) || ($avp(count) > 8)) {
+		avp_db_query("select reason from banlist where ipaddr='$si' and domain='$td' and subscriber='$tU'", "$avp(reason)");
+		xlog("L_INFO", "$ci|end| BANLIST: DROPPING REQUESTS FROM $si . $avp(reason) ");
+		sl_send_reply("403","$avp(reason)");
+		drop;
+		exit;
+	}
+############ 23.03.2019 Security Update ############
+
+############ 21.03.2019 Security Update ############
+
+    ## CVE-2018-14767
+    if($(hdr(To)[1]) != NULL) {
+        xlog("L_WARN", "$ci|end|second To header not null - dropping message");
+        drop;
+    }
+
+    if ($tU == NULL) {
+        xlog("L_INFO", "$ci|stop|ignoring subscribe with empty TO username from a $ua\n");
+        send_reply("400", "Missing TO username");
+        drop;
+    }
+
+    if ($fU == NULL) {
+        xlog("L_INFO", "$ci|stop|ignoring subscribe with empty FROM username from a $ua\n");
+        send_reply("400", "Missing FROM username");
+        drop;
+    }
+
+############ 21.03.2019 Security Update ############
+    
+#	if ($rd =~ "[0-9]{1,3}\.[0-9]{1,3}.[0-9]{1,3}\.[0-9]{1,3}") {
+#        xlog("L_WARN", "$ci|end|dropping $rm request with IP domain\n");
+#        drop();
+#        exit();
+#    }
+
+#	if(is_method("REGISTER|INVITE")) {
+#	    if ($td =~ "([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})") {
+#			if (ds_is_in_list("$si", "", "1")){
+#				return();
+#			}
+#			else
+#			if ( check_source_address("1","$avp(trunk_attrs)") ) {
+#				return();
+#			} 
+#			else 
+#			if ( is_from_gw() ) {
+#				return();
+#			} 
+#	    xlog("L_WARN", "$ci|end|dropping request with IP domain in To header\n");
+#   	drop();
+#	    exit;
+#		}
+#	}
+
+	if ($ua == "friendly-scanner" ||
+		$ua == "sundayddr" ||
+    	$ua == "pplsip" ||
+    	$ua =~ "NiceGuy" ||
+    	$ua =~ "sipcli" ||
+		$ua =~ "VaxSIPUserAgent" ||
+		$ua =~ "sipcli/v" ||
+		$ua =~ "sipvicious" ||
+		$ua =~ "iWar" ||
+		$ua =~ "sip-scan" ||
+		$ua =~ "hinet.net" ||
+		$ua =~ "pplsip" ||
+		$ua =~ "fdgddfg546df4g8d5f" ||
+		$ua =~ "Vicidial" ||
+		$ua =~ "srdfchgvm" ||
+		$ua =~ "PCrNYocI" ||
+		$ua =~ "assddfgghh" ||
+		$ua =~ "gaf") {
+    		xlog("L_WARN", "$ci|end|dropping message with user-agent $ua from $si:$sp\n");
+			drop();
+    		exit;
+	}
+
+	if (!mf_process_maxfwd_header("10")) {
+		xlog("L_WARN", "$ci|end|to many hops");
+		send_reply("483","Too Many Hops");
+		exit;
+	}
+
+    if ($ml >=  2048 ) {
+		xlog("L_WARN", "$ci|end|Big message received from $Au $si:$sp\n");
+        sl_send_reply("513", "Message too big");
+        return;
+    }
+
+#	if (!pike_check_req()) { 
+#		xlog("L_WARN", "$ci|end|request from blocked IP - $rm from $fu (IP:$si:$sp)\n");
+#		drop();
+#		exit; 
+#	};
+
+	if (is_present_hf("Proxy-Authorization") &&
+    $ar =~ "[0-9]{1,3}\.[0-9]{1,3}.[0-9]{1,3}\.[0-9]{1,3}" ) {
+		xlog("L_WARN", "$ci|end|dropping request with IP domain in Proxy-Authorization header\n");
+		drop();
+		exit;
+    }
+
+}
+
+failure_route[GW_FAILOVER] {
+	if (t_was_cancelled()) {
+		exit;
+	}
+
+	# failure detection with redirect to next available trunk
+	if (t_check_status("(408)|([56][0-9][0-9])")) {
+		xlog("Failed trunk $rd/$du detected \n");
+
+		
+		if ( ds_next_dst() ) {
+		
+			t_on_failure("GW_FAILOVER");
+			t_relay();
+			exit;
+		}
+		
+		send_reply("500","All GW are down");
+	}
+}
+
+
+

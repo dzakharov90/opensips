@@ -1,0 +1,22 @@
+
+#!/bin/bash
+
+fuser=$1
+duser=$2
+cdomain=$3
+rc=$4
+
+echo "From:sbc@yulsip.com" > /etc/opensips/mail//usr/sbin/opensips[25533]: ERROR:exec:exec_str: no uri from /etc/opensips/fraudmail.sh '1005' '81079370279015' 'sbc.yulsip.com' '-1
+echo "Subject:Fraud calls Detected" >> /etc/opensips/mail/$filename
+echo "WARNING!!!" >> /etc/opensips/mail/$filename
+echo "Fraud calls detected for user $fuser rc= $4 to destination num $duser and client domain $cdomain" >> /etc/opensips/mail/$filename
+echo "IP Banned. Client is disabled for security reason" >> /etc/opensips/mail/$filename
+echo "Best regards" >> /etc/opensips/mail/$filename
+echo "" >> /etc/opensips/mail/$filename
+echo "" >> /etc/opensips/mail/$filename
+echo "" >> /etc/opensips/mail/$filename
+echo "----------------------------" >> /etc/opensips/$filename
+echo "YulSIP Communications" >> /etc/opensips/$filename
+echo "e-mail: support@yulsip.com" >> /etc/opensips/$filename
+echo "web: https://www.yulsip.com" >> /etc/opensips/$filename
+

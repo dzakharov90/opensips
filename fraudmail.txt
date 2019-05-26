@@ -1,0 +1,13 @@
+From:sbc@yulsip.com
+Subject:Fraud calls Detected
+WARNING!!!
+Fraud calls detected for user 1005 rc= 1 to destination num 84991123884 and client domain sbc.yulsip.com
+IP Banned. Client is disabled for security reason
+Best regards
+
+
+
+----------------------------
+YulSIP Communications
+e-mail: support@yulsip.com
+web: https://www.yulsip.com
